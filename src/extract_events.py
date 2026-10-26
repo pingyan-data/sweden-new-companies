@@ -76,7 +76,7 @@ def main() -> int:
         n = normalize(rec)
         orgnrs.add(n["orgnr"])
         max_reg = max(max_reg, n["registration_date"])
-        is_person = n["id_type"] == "PERSON"
+        is_person = n["id_type"] in ("PERSON", "DODSBO")
         if is_person and PRIVATE_DIR is None:
             continue
         target = out["private" if is_person else "public"]
