@@ -1,0 +1,136 @@
+name: weekly-fetch
+
+on:
+  schedule:
+    - cron: "0 6 * * 2"        # Tuesday 06:00 UTC — the bulk file is published Monday night
+  workflow_dispatch:            # manual "Run workflow" button in the Actions tab
+    inputs:
+      archive:
+        description: "Also archive the full bulk file as a GitHub Release (Parquet)"
+        type: boolean
+        default: false
+      force:
+        description: "Download even if the bulk file looks unchanged"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write               # commit data back + create releases
+
+concurrency:
+  group: weekly-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04       # pinned on purpose — do NOT use ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BOLAGSVERKET_BULK_URL: ${{ vars.BOLAGSVERKET_BULK_URL }}
+      API_ORG_FORMS: ${{ vars.API_ORG_FORMS || 'AB' }}
+      MAX_API_LOOKUPS: ${{ vars.MAX_API_LOOKUPS || '300' }}
+      FORCE: ${{ inputs.force && '1' || '0' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      # Private repo for personal data (sole traders = personnummer).
+      # Checked out INSIDE the workspace but gitignored by the public repo.
+      - name: Check out private data repo
+        id: private
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: pingyan-data/sweden-new-companies-private
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: private-data
+
+      # Each step may fail without stopping the others (continue-on-error),
+      # but the LAST step turns any failure into a red run → email alert.
+      - name: Fetch bulk file
+        id: bulk
+        continue-on-error: true
+        run: python src/fetch_bulk.py
+
+      - name: Extract new registrations / deregistrations
+        id: events
+        if: steps.bulk.outcome == 'success'
+        continue-on-error: true
+        env:
+          PRIVATE_DIR: ${{ steps.private.outcome == 'success' && 'private-data/data/raw/bulk' || '' }}
+        run: |
+          if [ -n "$PRIVATE_DIR" ]; then mkdir -p "$PRIVATE_DIR"; fi
+          python src/extract_events.py
+
+      - name: Enrich new companies via API
+        id: api
+        if: steps.events.outcome == 'success'
+        continue-on-error: true
+        env:
+          BOLAGSVERKET_CLIENT_ID: ${{ secrets.BOLAGSVERKET_CLIENT_ID }}
+          BOLAGSVERKET_CLIENT_SECRET: ${{ secrets.BOLAGSVERKET_CLIENT_SECRET }}
+        run: python src/fetch_api.py
+
+      - name: Build processed file
+        id: processed
+        if: steps.events.outcome == 'success'
+        continue-on-error: true
+        run: python src/build_processed.py
+
+      - name: Archive full bulk file to a Release (optional)
+        id: archive
+        if: steps.bulk.outcome == 'success' && (vars.ARCHIVE_TO_RELEASE == 'true' || inputs.archive)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python src/archive_bulk.py
+          f=$(ls data/tmp/*.parquet 2>/dev/null | head -1)
+          if [ -n "$f" ]; then
+            tag="bulk-$(date -u +%F)"
+            gh release create "$tag" "$f" --title "Bulk snapshot $(date -u +%F)" \
+              --notes "Full bolagsverket_bulkfil as Parquet (all columns strings). Source: Bolagsverket, Värdefulla datamängder." \
+              || gh release upload "$tag" "$f" --clobber
+          fi
+
+      - name: Write status.md
+        if: always()
+        run: python src/write_status.py
+
+      - name: Commit snapshot
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ status.md
+          git commit -m "data: weekly snapshot $(date -u +%F)" || echo "No changes to commit"
+          git pull --rebase origin main
+          git push
+
+      - name: Commit private data
+        id: private_commit
+        if: always() && steps.private.outcome == 'success'
+        working-directory: private-data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "data: weekly persons snapshot $(date -u +%F)" || echo "No changes to commit"
+          git pull --rebase
+          git push
+
+      - name: Fail loudly if any step broke
+        if: always()
+        run: |
+          echo "private=${{ steps.private.outcome }} private_commit=${{ steps.private_commit.outcome }}"
+          echo "bulk=${{ steps.bulk.outcome }} events=${{ steps.events.outcome }} api=${{ steps.api.outcome }} processed=${{ steps.processed.outcome }} archive=${{ steps.archive.outcome }}"
+          for o in "${{ steps.private.outcome }}" "${{ steps.private_commit.outcome }}" "${{ steps.bulk.outcome }}" "${{ steps.events.outcome }}" "${{ steps.api.outcome }}" "${{ steps.processed.outcome }}" "${{ steps.archive.outcome }}"; do
+            if [ "$o" = "failure" ]; then echo "::error::A pipeline step failed — see status.md"; exit 1; fi
+          done
