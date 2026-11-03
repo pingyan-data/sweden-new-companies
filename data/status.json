@@ -1,11 +1,12 @@
 {
   "bulk": {
-    "run_date": "2026-10-27",
-    "state": "unchanged",
+    "run_date": "2026-11-03",
+    "state": "failed",
+    "error": "('Connection broken: IncompleteRead(87335715 bytes read, 164197252 more expected)', IncompleteRead(87335715 bytes read, 164197252 more expected))",
     "last_modified": "Mon, 26 Oct 2026 02:23:12 GMT",
     "last_downloaded": "2026-10-26"
   },
-  "updated_at": "2026-10-27T11:35:10+00:00",
+  "updated_at": "2026-11-03T13:43:47+00:00",
   "events": {
     "run_date": "2026-10-27",
     "state": "skipped (bulk unchanged)"
