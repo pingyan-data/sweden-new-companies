@@ -1,10 +1,20 @@
 # Pipeline status
 
-Last run: **2026-11-03** (UTC). Updated by GitHub Actions — do not edit by hand.
+Last run: **2026-11-09** (UTC). Updated by GitHub Actions — do not edit by hand.
 
 | Step | Ran | State | Details |
 |---|---|---|---|
-| bulk | 2026-11-03 | ❌ failed | error: ('Connection broken: IncompleteRead(87335715 bytes read, 164197252 more expected)', IncompleteRead(87335715 bytes read, 164197252 more expected)), last_modified: Mon, 26 Oct 2026 02:23:12 GMT, last_downloaded: 2026-10-26 |
-| events | 2026-10-27 | ⚠️ skipped (bulk unchanged) (stale — did not run today) |  |
-| api | 2026-10-27 | ⚠️ skipped (no events today) (stale — did not run today) |  |
-| processed | 2026-10-27 | ⚠️ skipped (no events today) (stale — did not run today) |  |
+| bulk | 2026-11-09 | ✅ downloaded | last_modified: Mon, 09 Nov 2026 02:31:36 GMT, content_type: application/zip, size_mb: 251.7, sha256: ed05a72df3181bb8b6c9da5d4be8833e6c11f77a0c058eb8532945a41d1e2ff1, last_downloaded: 2026-11-09 |
+| events | 2026-11-09 | ✅ ok | total_rows: 2987220, malformed_rows: 0, unique_orgnr: 2877614, latest_registration_date_in_file: 2026-11-06, window_start: 2026-10-05, new_registrations: 2825, deregistrations: 1155, persons_new_registrations: not collected, persons_deregistrations: not collected |
+| api | 2026-11-09 | ✅ ok | candidates: 2751, looked_up: 2000, ok: 2000, errors: 0 |
+| processed | 2026-11-09 | ✅ ok | events: 3980, enriched: 2000, enriched_with_sni: 1001 |
+
+New registrations by organisation form (this run):
+
+- AB: 2751
+- HB: 38
+- BRF: 12
+- EK: 11
+- FL: 8
+- KB: 4
+- I: 1
