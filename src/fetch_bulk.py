@@ -1,7 +1,9 @@
 """Download this week's bolagsverket_bulkfil.zip into data/tmp/ (gitignored).
 
-Skips the download if the server's Last-Modified header is the same as last
-week's (= Bolagsverket hasn't published a new file yet). FORCE=1 overrides.
+* Resumable: if the connection drops mid-download, continue with an HTTP Range
+  request from the bytes already received (up to BULK_MAX_ATTEMPTS tries).
+* Skips the download if Last-Modified equals last week's (FORCE=1 overrides).
+* Fails if the source hasn't been updated for more than 10 days.
 Exit code 1 = failure (the workflow turns that into a red run + email).
 """
 import hashlib
@@ -17,37 +19,76 @@ import requests
 from config import (BULK_URL, BULK_ZIP, RAW_BULK, USER_AGENT, load_status,
                     run_date, update_status)
 
+MAX_ATTEMPTS = int(os.environ.get("BULK_MAX_ATTEMPTS", "8"))
+
+
+class NotAZip(RuntimeError):
+    """Wrong URL (HTML page / captcha). Retrying won't help."""
+
+
+def _sha256(path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
 
 def download(url: str, prev_last_modified: str | None):
-    for attempt in range(1, 4):
+    BULK_ZIP.parent.mkdir(parents=True, exist_ok=True)
+    part = BULK_ZIP.with_name(BULK_ZIP.name + ".part")
+    part.unlink(missing_ok=True)
+    total = etag = None
+    lm = ctype = ""
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        have = part.stat().st_size if part.exists() else 0
+        headers = {"User-Agent": USER_AGENT}
+        if have:
+            headers["Range"] = f"bytes={have}-"
+            if etag:
+                headers["If-Range"] = etag   # resume only if the file hasn't changed
         try:
-            with requests.get(url, stream=True, timeout=(30, 300),
-                              headers={"User-Agent": USER_AGENT}) as r:
+            with requests.get(url, stream=True, timeout=(30, 120), headers=headers) as r:
+                if r.status_code == 416 and total and have >= total:
+                    break                     # already complete
                 r.raise_for_status()
-                lm = r.headers.get("Last-Modified", "")
-                ctype = r.headers.get("Content-Type", "")
-                if lm and lm == prev_last_modified and os.environ.get("FORCE") != "1":
-                    return {"state": "unchanged", "last_modified": lm}
-                if "text/html" in ctype:
-                    raise RuntimeError(
-                        f"Got HTML instead of a zip (Content-Type {ctype}). "
-                        "The URL is probably a web page or a captcha, not the file link.")
-                BULK_ZIP.parent.mkdir(parents=True, exist_ok=True)
-                h, size = hashlib.sha256(), 0
-                with BULK_ZIP.open("wb") as f:
+                if r.status_code == 206:
+                    mode = "ab"
+                    print(f"Resuming at {have / 1e6:.0f} MB")
+                else:                         # fresh start (or server ignored Range)
+                    mode = "wb"
+                    lm = r.headers.get("Last-Modified", "")
+                    ctype = r.headers.get("Content-Type", "")
+                    etag = r.headers.get("ETag")
+                    total = int(r.headers.get("Content-Length") or 0) or None
+                    if lm and lm == prev_last_modified and os.environ.get("FORCE") != "1":
+                        return {"state": "unchanged", "last_modified": lm}
+                    if "text/html" in ctype:
+                        raise NotAZip(
+                            f"Got HTML instead of a zip (Content-Type {ctype}). "
+                            "The URL is probably a web page or a captcha, not the file link.")
+                with part.open(mode) as f:
                     for chunk in r.iter_content(chunk_size=1 << 20):
                         f.write(chunk)
-                        h.update(chunk)
-                        size += len(chunk)
-            if not zipfile.is_zipfile(BULK_ZIP):
-                raise RuntimeError("Downloaded file is not a valid zip")
-            return {"state": "downloaded", "last_modified": lm, "content_type": ctype,
-                    "size_mb": round(size / 1e6, 1), "sha256": h.hexdigest()}
-        except Exception as e:  # noqa: BLE001
-            print(f"Attempt {attempt} failed: {e}")
-            if attempt == 3:
+            size = part.stat().st_size
+            if total and size < total:
+                raise IOError(f"incomplete: {size}/{total} bytes")
+            break
+        except NotAZip:
+            raise
+        except (requests.RequestException, IOError) as e:
+            got = part.stat().st_size if part.exists() else 0
+            print(f"Attempt {attempt}/{MAX_ATTEMPTS} interrupted at {got / 1e6:.0f} MB: {str(e)[:150]}")
+            if attempt == MAX_ATTEMPTS:
                 raise
-            time.sleep(30 * attempt)
+            time.sleep(min(15 * attempt, 120))
+
+    if not zipfile.is_zipfile(part):
+        raise RuntimeError("Downloaded file is not a valid zip")
+    part.replace(BULK_ZIP)
+    return {"state": "downloaded", "last_modified": lm, "content_type": ctype,
+            "size_mb": round(BULK_ZIP.stat().st_size / 1e6, 1), "sha256": _sha256(BULK_ZIP)}
 
 
 def main() -> int:
