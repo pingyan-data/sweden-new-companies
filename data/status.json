@@ -1,49 +1,21 @@
 {
   "bulk": {
-    "run_date": "2026-11-09",
-    "state": "downloaded",
+    "run_date": "2026-11-10",
+    "state": "unchanged",
     "last_modified": "Mon, 09 Nov 2026 02:31:36 GMT",
-    "content_type": "application/zip",
-    "size_mb": 251.7,
-    "sha256": "ed05a72df3181bb8b6c9da5d4be8833e6c11f77a0c058eb8532945a41d1e2ff1",
     "last_downloaded": "2026-11-09"
   },
-  "updated_at": "2026-11-09T22:06:13+00:00",
+  "updated_at": "2026-11-10T14:18:28+00:00",
   "events": {
-    "run_date": "2026-11-09",
-    "state": "ok",
-    "total_rows": 2987220,
-    "malformed_rows": 0,
-    "unique_orgnr": 2877614,
-    "latest_registration_date_in_file": "2026-11-06",
-    "window_start": "2026-10-05",
-    "new_registrations": 2825,
-    "deregistrations": 1155,
-    "persons_new_registrations": "not collected",
-    "persons_deregistrations": "not collected",
-    "new_by_org_form": {
-      "AB": 2751,
-      "HB": 38,
-      "BRF": 12,
-      "EK": 11,
-      "FL": 8,
-      "KB": 4,
-      "I": 1
-    }
+    "run_date": "2026-11-10",
+    "state": "skipped (bulk unchanged)"
   },
   "api": {
-    "run_date": "2026-11-09",
-    "state": "ok",
-    "candidates": 2751,
-    "looked_up": 2000,
-    "ok": 2000,
-    "errors": 0
+    "run_date": "2026-11-10",
+    "state": "skipped (no events today)"
   },
   "processed": {
-    "run_date": "2026-11-09",
-    "state": "ok",
-    "events": 3980,
-    "enriched": 2000,
-    "enriched_with_sni": 1001
+    "run_date": "2026-11-10",
+    "state": "skipped (no events today)"
   }
 }
